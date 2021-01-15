@@ -29,10 +29,35 @@ x_train = x_train.astype('float32') / 255.
 x_test = x_test.astype('float32') / 255.
 """
 
+"""
+# just train on the first 7 letters, for shits and giggles
+x_train_t = []
+y_train_t = []
+
+for i in range(len(x_train)):
+  if y_train[i] >= 0 and y_train[i] <= 6:
+    x_train_t.append(x_train[i])
+    y_train_t.append(y_train[i])
+
+x_test_t = []
+y_test_t = []
+
+for i in range(len(x_test)):
+  if y_test[i] >= 0 and y_test[i] <= 6:
+    x_test_t.append(x_test[i])
+    y_test_t.append(y_test[i])
+
+x_train = np.array(x_train_t)
+x_test = np.array(x_test_t)
+
+y_train = np.array(y_train_t)
+y_test = np.array(y_test_t)
+"""
+
 print (x_train.shape)
 print (x_test.shape)
 
-latent_dim = 26
+latent_dim = 512
 
 class Autoencoder(Model):
   def __init__(self, latent_dim):

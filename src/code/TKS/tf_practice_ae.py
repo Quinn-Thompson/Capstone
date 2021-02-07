@@ -102,7 +102,7 @@ class DataGenerator(seq):
             # reshape it so that it includes the number of channels (this may need to be reworked)
             # I would instead save the files with channels attached ,instead of loading a file into each channel
             if self.n_channels > 0:
-              loaded_figures[i,] = np.reshape(loaded_figure_no_channel, (np.shape(loaded_figure_no_channel)[0], np.shape(loaded_figure_no_channel)[1], 1))
+              loaded_figures[i,] = np.reshape(loaded_figure_no_channel, (np.shape(loaded_figure_no_channel)[0], np.shape(loaded_figure_no_channel)[1], np.shape(loaded_figure_no_channel)[2], 1))
             else:
               loaded_figures[i,] = loaded_figure_no_channel/np.max(loaded_figure_no_channel)
             # then insert a label based on the file name without the .npy ( as mine were .npy array file, fastest loading time but larger than pickle)
@@ -115,55 +115,15 @@ class DataGenerator(seq):
 
         return loaded_figures, loaded_labels
 
-class Autoencoder(Model):
-  def __init__(self, latent_dim):
-    """
-      Breaks the NN into two seperate portions, the encoder, which compacts the data
-      into a database, and the decoder, which unfurls the data and attempts to recreate the image
-    """
-    super(Autoencoder, self).__init__()
-    self.latent_dim = latent_dim   
-    self.encoder = tf.keras.Sequential([
-      layers.Input(shape=(48,64,1)), # input data shape
-      layers.Flatten(), # flatten it into 1D neuron layer
-      layers.Dropout(0.2), # 20% dropout breaks 20% of the weights in a DNN, this limits locality when it comes to 
-      # weights that have been trained for a specific label ( a weight that heavily effects a traditional label and is broken will
-      #  have to adjust somewhere else) this limits overfitting
-      layers.Dense(latent_dim), # densely connects x neurons with the flat image
-    ])
-    
-    self.decoder = tf.keras.Sequential([
-      layers.GaussianNoise(0.03), # introduces gaussian distrubted noise that helps regularize the encoded DNN, along with also spreading
-      # info 
-      # gaussian noise introduced between activation function to help normalize the values that need to be fired through the activation function.
-      layers.Activation('relu'), # rectified linear activation, better than sigmoid in most cases as the activations lack snapping 
-      # between 0 and 1, whereas relu introduces linearity for stochastic gradiant descent (ae, larger values for activation
-      # react accordingly, and negatives will not, which accomplishes the purpose of non-linearity like a sigmoid or tanh). 
-      layers.BatchNormalization(), # normalize values between layers so that extremes do not cause rampant exponential increase in weights.
-      # this is a more likely case when the activations are monotonic like relu
-      # The normalization limits weight increasing and exact weight fitting
-      layers.Dropout(0.2),
-      layers.Dense(3072), # densely connected layer that is the multiple of the image
-      layers.Activation('relu'),
-      layers.Reshape((48,64)),
-    ])
-
-  def call(self, x):
-    encoded = self.encoder(x)
-    print('ran')
-    decoded = self.decoder(encoded)
-    return decoded
-    
 class LSTM_model(Model):
   def __init__(self, latent_dim):
     super(LSTM_model, self).__init__()
     self.latent_dim = latent_dim   
     self.lstm = tf.keras.Sequential([
-      layers.Dropout(0.2),
-      layers.LSTM(64, activation='relu', input_shape=(sequence_len, self.latent_dim), return_sequences=True), # accepts a series of time steps and the info size input_shape(time, features)
-      layers.LSTM(32, activation='relu', return_sequences=True), # accepts a series of time steps and the info size input_shape(time, features)
-      layers.LSTM(32, activation='relu',), # accepts a series of time steps and the info size input_shape(time, features)
+      layers.ConvLSTM2D(64, kernel_size=(3,3), strides=(2,2), activation='relu', input_shape=(sequence_len, 48, 64, 1), return_sequences=True), # accepts a series of time steps and the info size input_shape(time, features)
+      layers.ConvLSTM2D(32, kernel_size=(5,5), strides=(3,3), activation='relu'), # accepts a series of time steps and the info size input_shape(time, features)
       #layers.Dense(512, activation='relu'),
+      layers.Flatten(),
       layers.Dense(latent_dim, activation='relu'),
       layers.Dense(4, activation='softmax')
     ])
@@ -182,21 +142,11 @@ if __name__ == '__main__':
     print("Please install GPU version of TF")
 
 
-  label_path = 'database\\temporallabel\\'
-  figure_path = 'database\\temporal\\'
-  figure_encode_path = 'database\\temporalencoded\\'
+  sequence_figure_path = 'database\\sequence_figures\\'
+  sequence_label_path = 'database\\sequence_labels'
 
-  val_split = 0.7
-  test_split = 0.9
-
-  file_names = os.listdir(figure_path)
-  file_array_shuffle = random.sample( file_names, len(file_names) )
-  training_files=file_names[:int(len(file_array_shuffle)*0.8)]
-  validation_files=file_names[int(len(file_array_shuffle)*0.8):]
-
-  
   # load in the figures for the neural network
-  with open(label_path + 'temporallabel', "rb") as fd:
+  with open(sequence_label_path + '\\sequence_labels', "rb") as fd:
     labels = np.array(pickle.load(fd), dtype=np.float64)
   
   unique, counts = np.unique(labels, return_counts=True)
@@ -222,45 +172,7 @@ if __name__ == '__main__':
   # is it worth it to set it up for when we are so early on and not even using that many figures yet?
   # Eh, Probably not. ¯\_(ツ)_/¯
   latent_dim = 512
-  optimizer = optimizers.Adam(lr=0.0003)
-  sequence_len = 12
-
-  autoencoder = Autoencoder(latent_dim)
-
-  if len(os.listdir(figure_encode_path)) == 0:
-    training_generator = DataGenerator(path=figure_path, dimensions=(48,64), labels=labels, batch_size=16, file_names=training_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=False)
-    validation_generator = DataGenerator(path=figure_path, dimensions=(48,64), labels=labels, batch_size=16, file_names=validation_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=False)
-
-
-    
-    autoencoder.compile(optimizer=optimizer, loss=losses.MeanSquaredError(), metrics=['MeanAbsoluteError', 'MeanAbsolutePercentageError'])
-
-    autoencoder.fit(training_generator,
-                    epochs=80,
-                    validation_data=validation_generator)
-    
-    file_slice = np.zeros(shape=(16, 48, 64))
-    all_encoded_iamges = np.zeros(shape=(len(file_names), latent_dim))
-    sequence_array = np.zeros(shape=(sequence_len, latent_dim))
-    for i, figure in enumerate(file_names):
-      with open(figure_path + figure, "rb") as fd:
-        sequence_array = np.roll(sequence_array, shift=-1, axis=0)
-        loaded_file = pickle.load(fd)
-        #flattened_fle = loaded_file.flatten()
-        loaded_file_channel = np.reshape(loaded_file, (1, np.shape(loaded_file)[0], np.shape(loaded_file)[1], 1))
-        all_encoded_iamges[i] = autoencoder.encoder(loaded_file_channel).numpy()
-        all_encoded_iamges[i] = (all_encoded_iamges[i]-np.min(all_encoded_iamges[i]))/(np.max(all_encoded_iamges[i])-np.min(all_encoded_iamges[i]))
-        sequence_array[sequence_len-1] = all_encoded_iamges[i]
-        
-      if i > sequence_len:
-        with open(figure_encode_path + str(i-sequence_len).zfill(6), "bx") as fd:
-          pickle.dump(sequence_array, fd)
-
-
-
-
-  
-
+  sequence_len = 9
 
   # information is sliced along the time scale 
   # ae: hand moves for 15 frames, lstm accepts 10
@@ -275,33 +187,20 @@ if __name__ == '__main__':
   #encoded_imgs_reshape = np.array([encoded_imgs[i:i+sequence_len] for i, _ in enumerate(encoded_imgs) if i+sequence_len < len(encoded_imgs) ])
   #print(np.shape(encoded_imgs))
 
-  file_names = os.listdir(figure_encode_path)
+  file_names = os.listdir(sequence_figure_path)
   file_array_shuffle = random.sample( file_names, len(file_names) )
   training_files=file_names[:int(len(file_array_shuffle)*0.8)]
   validation_files=file_names[int(len(file_array_shuffle)*0.8):]
-  """all_images_vali_view = np.zeros(shape=(len(os.listdir(figure_path)), 48, 64))
-  all_images_vali = np.zeros(shape=(len(file_names), sequence_len, latent_dim))
-  for i, figure in enumerate(os.listdir(figure_path)):
-    with open(figure_path + figure, "rb") as fd:
-      loaded_file = pickle.load(fd)
-      all_images_vali_view[i] = np.array(loaded_file)
-  for i, figure in enumerate(os.listdir(figure_encode_path)):
-    with open(figure_encode_path + figure, "rb") as fd:
-      loaded_file = pickle.load(fd)
-      all_images_vali[i] = np.array(loaded_file)
-  """
 
-  class_weight={}
-
-  training_generator = DataGenerator(path=figure_encode_path, dimensions=(sequence_len,latent_dim), labels=labels[sequence_len:], batch_size=16, file_names=training_files, n_channels=0, num_classes=3, shuffle=True, use_file_labels=True)
-  validation_generator = DataGenerator(path=figure_encode_path, dimensions=(sequence_len,latent_dim), labels=labels[sequence_len:], batch_size=16, file_names=validation_files, n_channels=0, num_classes=3, shuffle=True, use_file_labels=True)
+  training_generator = DataGenerator(path=sequence_figure_path, dimensions=(sequence_len,48,64), labels=labels, batch_size=16, file_names=training_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=True)
+  validation_generator = DataGenerator(path=sequence_figure_path, dimensions=(sequence_len,48,64), labels=labels, batch_size=16, file_names=validation_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=True)
 
   lstm = LSTM_model(latent_dim)
-  optimizer = optimizers.Adam(lr=0.00006)
+  optimizer = optimizers.Adam(lr=0.00001)
   lstm.compile(optimizer=optimizer, loss=losses.CategoricalCrossentropy(), metrics=['accuracy'])
 
   lstm.fit(training_generator,
-                  epochs=130,
+                  epochs=30,
                   validation_data=validation_generator,
                   class_weight=class_weights)
 
@@ -315,18 +214,16 @@ if __name__ == '__main__':
   # The camera object
   cam = RSCW.RSC()
   pp = PP.PreProc()
-  image_sequence = np.zeros((1, sequence_len, latent_dim))
+  image_sequence = np.zeros((1, sequence_len, 48, 64, 1))
   while(1):
       # capture the image
       image = cam.capture()
 
       # proccess the image
       image = np.array(pp.preproccess(image))
-      loaded_file_channel = np.reshape(image, (1, np.shape(image)[0], np.shape(image)[1], 1))
-      image_fltn = autoencoder.encoder(loaded_file_channel).numpy()
-      image_fltn = (image_fltn-np.min(image_fltn))/(np.max(image_fltn)-np.min(image_fltn))
+      loaded_file_channel = np.reshape(image, (np.shape(image)[0], np.shape(image)[1], 1))
       image_sequence = np.roll(image_sequence, shift=-1, axis=1)
-      image_sequence[0][sequence_len-1] = image_fltn
+      image_sequence[0][sequence_len-1] = loaded_file_channel
 
       # display the image
       cv2.imshow("Depth Veiw", image)

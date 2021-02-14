@@ -8,56 +8,97 @@ import preproc as PP
 import RSC_Wrapper as RSCW
 import pickle5 as pickle
 
-def roll_sequence(file_path_open, file_path_save, sequence_array, file_Names, label_array, sequence_len, first):
-    for i, figure in enumerate(file_Names):
+def roll_sequence(file_path_open, 
+                  file_path_save, 
+                  sequence_array, 
+                  label_new, 
+                  label_old, 
+                  sequence_len, 
+                  current_figure,
+                  first):
+    directory_listing = os.listdir(file_path_open)
+    for i, figure in enumerate(directory_listing):
         with open(file_path_open+figure, "rb") as fd:
             sequence_array = np.roll(sequence_array, shift=-1, axis=0)
             loaded_file = pickle.load(fd)
             sequence_array[sequence_len-1] = loaded_file
         
         if i >= sequence_len or first == False:
-            label_array.append(labels[i]) 
-            label_iteration += 1
-            with open(file_path_save + str(i-sequence_len).zfill(6), "bx") as fd:
+            label_new.append(label_old[i])
+            with open(file_path_save + str(current_figure).zfill(6), "bx") as fd:
                 pickle.dump(sequence_array, fd)
+            current_figure += 1 
+    #print(sequence_array)
+    return sequence_array, current_figure
 
 def sequence_data():
     # paths to load figures and labels from
-    label_path = 'database\\temporallabel\\'
-    figure_path = 'database\\temporal\\'
-    figure_encode_path = 'database\\sequence_figures\\'
 
-    gesture_path = 'database/gesture_seperate/'
-    save_path = 'database/sequenced_figures'
+    gesture_path = 'database/gestures_seperate/'
+    labels_path = 'database/labels_seperate/'
 
-    with open(label_path + 'temporallabel', "rb") as fd:
-        labels = np.array(pickle.load(fd), dtype=np.float64)
-    
+
+    save_path = 'database/sequenced_figures_post_mutation/'
+
+
     # length of the lstm sequence
     sequence_len = 9
 
-    labels_new = np.empty((len(labels) - sequence_len))
-
-
-    label_iteration = 0
+    current_figure = 0
 
     folder_gestures = os.listdir(gesture_path)
 
+    labels_new = []
+
     # yay nested
-    for gesture_sequences in folder_gestures:
-        # figures from one of the files
-        current_gesture_name = os.listdir(gesture_sequences)
+    for gestures in folder_gestures:
+        print(gestures)
+        with open(labels_path + gestures + '/labels', "rb") as fd:
+            labels = np.array(pickle.load(fd), dtype=np.float64)
 
-        for prev_gesture in folder_gestures:
+        gesture_mutations_path = gesture_path + gestures + "/gesture_mutations/"
+        current_gesture_mutation_names = os.listdir(gesture_mutations_path)
+        # for each gesture mutations within these gestures
+        for gesture_mutations in current_gesture_mutation_names:
+            # figures from one of the files
+            random_gesture_partition = folder_gestures.copy()    
 
-            prev_gesture_names = os.listdir(prev_gesture)
+            for i in range(4):
+                random.shuffle(random_gesture_partition)
+                random_mutation_path = gesture_path + random_gesture_partition[0] + "/gesture_mutations/"
+                with open(labels_path + random_gesture_partition[0] + '/labels', "rb") as fd:
+                    labels_random_partition = np.array(pickle.load(fd), dtype=np.float64)
+                #random_gesture_partition = random_gesture_partition[:-1]
+                random_mutation_partition = os.listdir(random_mutation_path)
+                random.shuffle(random_mutation_partition)
+                
 
-            sequence_array = np.empty(shape=(sequence_len, 48, 64))
-            roll_sequence((gesture_path+prev_gesture), save_path, sequence_array, prev_gesture_names, labels_new, sequence_len, True)
-            roll_sequence((gesture_path+gesture_sequences), save_path, sequence_array, current_gesture_name, labels_new, sequence_len, False)
+
+                # for some reason this array is acting immutable when passed to the roll sequence function?
+                # it's really dumb, as it does it even when the write flag is set to true
+                # i think it may be np.roll
+                # that's why it's being passed back
+                sequence_array = np.zeros(shape=(sequence_len, 48, 64))
+                sequence_array.setflags(write=1)
+                sequence_array, current_figure = roll_sequence((random_mutation_path+random_mutation_partition[0] + "/"), 
+                                                save_path, 
+                                                sequence_array, 
+                                                labels_new, 
+                                                labels_random_partition, 
+                                                sequence_len,
+                                                current_figure,
+                                                True)
+                _, current_figure = roll_sequence((gesture_mutations_path+gesture_mutations + "/"), 
+                                                save_path, 
+                                                sequence_array, 
+                                                labels_new, 
+                                                labels, 
+                                                sequence_len,
+                                                current_figure,
+                                                False)
 
 
-    pth = "./database/" + "sequence_labels" + "/" + "sequence_labels"
+    pth = "./database/" + "sequenced_labels_post_mutation" + "/" + "sequence_labels"
 
     with open(pth, "bx") as fd:
         pickle.dump(labels_new, fd)

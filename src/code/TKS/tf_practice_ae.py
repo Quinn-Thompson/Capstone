@@ -90,7 +90,7 @@ class DataGenerator(seq):
         else:
           loaded_figures = np.empty((self.batch_size, *self.dimensions))  
         if self.use_file_labels:
-          loaded_labels = np.empty((self.batch_size, 4), dtype=int)
+          loaded_labels = np.empty((self.batch_size, 27), dtype=int)
         else:
           loaded_labels = np.empty((self.batch_size, *self.dimensions, self.n_channels))  
 
@@ -107,7 +107,7 @@ class DataGenerator(seq):
               loaded_figures[i,] = loaded_figure_no_channel/np.max(loaded_figure_no_channel)
             # then insert a label based on the file name without the .npy ( as mine were .npy array file, fastest loading time but larger than pickle)
             if self.use_file_labels:
-              loaded_labels[i,] = to_categorical(self.labels[int(file_name)], 4)
+              loaded_labels[i,] = to_categorical(self.labels[int(file_name)], 27)
             else:
               with open(self.path + file_name, "rb") as fd:
                 loaded_labels_no_channel = pickle.load(fd)
@@ -120,12 +120,17 @@ class LSTM_model(Model):
     super(LSTM_model, self).__init__()
     self.latent_dim = latent_dim   
     self.lstm = tf.keras.Sequential([
-      layers.ConvLSTM2D(64, kernel_size=(3,3), strides=(2,2), activation='relu', input_shape=(sequence_len, 48, 64, 1), return_sequences=True), # accepts a series of time steps and the info size input_shape(time, features)
-      layers.ConvLSTM2D(32, kernel_size=(5,5), strides=(3,3), activation='relu'), # accepts a series of time steps and the info size input_shape(time, features)
-      #layers.Dense(512, activation='relu'),
+      layers.Conv3D(64, kernel_size=(2, 5, 5), padding ='same'),
+      layers.BatchNormalization(),
+      layers.AveragePooling3D((1, 2, 2)),
+      layers.Activation('selu'),
+      layers.ConvLSTM2D(64, kernel_size=(4,4), strides=(3,3), recurrent_dropout=0.2), # accepts a series of time steps and the info size input_shape(time, features)
       layers.Flatten(),
-      layers.Dense(latent_dim, activation='relu'),
-      layers.Dense(4, activation='softmax')
+      layers.Dense(128, activation='relu'),
+      layers.Dropout(0.2),      
+      layers.Dense(512, activation='relu'),
+      layers.Dropout(0.2),
+      layers.Dense(27, activation='softmax')
     ])
 
   def call(self, x):
@@ -142,8 +147,8 @@ if __name__ == '__main__':
     print("Please install GPU version of TF")
 
 
-  sequence_figure_path = 'database\\sequence_figures\\'
-  sequence_label_path = 'database\\sequence_labels'
+  sequence_figure_path = 'database\\sequenced_figures_post_mutation\\'
+  sequence_label_path = 'database\\sequenced_labels_post_mutation'
 
   # load in the figures for the neural network
   with open(sequence_label_path + '\\sequence_labels', "rb") as fd:
@@ -152,11 +157,9 @@ if __name__ == '__main__':
   unique, counts = np.unique(labels, return_counts=True)
   class_weights = dict(zip(unique, counts))
   
-  class_weights[0.0] = (1/class_weights[0.0])*len(labels)
-  class_weights[1.0] = (1/class_weights[1.0])*len(labels)
-  class_weights[2.0] = (1/class_weights[2.0])*len(labels)
-  class_weights[3.0] = (1/class_weights[3.0])*len(labels)*1.1
-  
+  for i in class_weights:
+    class_weights[i] = (1/class_weights[i])*len(labels)
+  class_weights[23.0] = 1.0
   print(class_weights)
 
 

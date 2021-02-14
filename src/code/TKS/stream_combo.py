@@ -18,7 +18,7 @@ dbm = DBM.DB_man()
 # the preproccessing object
 pp = PP.PreProc()
 
-stream_length = 30
+stream_length = 15
 
 stream = np.zeros((stream_length,48,64), dtype=float)
 bbox = []

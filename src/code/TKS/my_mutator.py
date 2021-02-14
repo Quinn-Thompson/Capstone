@@ -35,6 +35,7 @@ def edit_image(operation):
             with open(gesture_path + gesture + '/' + _file, "rb") as fd:
                 gesture_sequence[i] = pickle.load(fd)
 
+        os.mkdir(path = "./database/" + "gestures_seperate/" + gesture + "/gesture_mutations/")
 
         # create a random partition for shift values between the width and height of the image
         # why random? well, if we allowed all possible combinations, there would be 
@@ -92,15 +93,17 @@ def edit_image(operation):
 
                         # product the sequence for user to view the progress
                         # can be removed to make process MUCH faster!
-                        gesture_product = np.prod(new_sequence, axis=0)
-                        cv2.imshow("Depth Veiw", gesture_product)
-                        k = cv2.waitKey(10)
+                        #gesture_product = np.prod(new_sequence, axis=0)
+                        #cv2.imshow("Depth Veiw", gesture_product)
+                        #k = cv2.waitKey(10)
 
                         # have not set up saving process yet
-                        #for i, image in enumerate(new_sequence):
-                            #pth = "./database/" + "gestures_shift" + "/" + str(i).zfill(7)
-                            #with open(pth, "bx") as fd:                    
-                                #pickle.dump(image, fd)
+                        os.mkdir(path = "./database/" + "gestures_seperate/" + gesture + "/gesture_mutations/" + str(iteration_total).zfill(5) + "/")
+
+                        for i, image in enumerate(new_sequence):
+                            pth = "./database/" + "gestures_seperate/" + gesture + "/gesture_mutations/" + str(iteration_total).zfill(5) + "/" + str(i).zfill(7)
+                            with open(pth, "bx") as fd:
+                                pickle.dump(image, fd)
 
         #pth = "./database/" + "labels_shift" + "/" + "labels"    
         #with open(pth, "bx") as fd:

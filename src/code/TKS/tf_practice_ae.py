@@ -9,8 +9,7 @@ import preproc as PP
 import RSC_Wrapper as RSCW
 import pickle5 as pickle
 
-from sklearn.metrics import accuracy_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
+
 from tensorflow.keras import layers, losses, optimizers
 from tensorflow.keras.datasets import fashion_mnist
 from tensorflow.keras.models import Model
@@ -122,14 +121,17 @@ class LSTM_model(Model):
     self.lstm = tf.keras.Sequential([
       layers.Conv3D(64, kernel_size=(2, 5, 5), padding ='same'),
       layers.BatchNormalization(),
+      layers.Dropout(0.2),
       layers.AveragePooling3D((1, 2, 2)),
       layers.Activation('selu'),
-      layers.ConvLSTM2D(64, kernel_size=(4,4), strides=(3,3), recurrent_dropout=0.2), # accepts a series of time steps and the info size input_shape(time, features)
+      layers.ConvLSTM2D(64, kernel_size=(5,5), strides=(3,3), recurrent_dropout=0.2), # accepts a series of time steps and the info size input_shape(time, features)
+      layers.Dropout(0.2),
+      layers.Activation('selu'),
       layers.Flatten(),
       layers.Dense(128, activation='relu'),
-      layers.Dropout(0.2),      
+      layers.Dropout(0.5),      
       layers.Dense(512, activation='relu'),
-      layers.Dropout(0.2),
+      layers.Dropout(0.5),
       layers.Dense(27, activation='softmax')
     ])
 
@@ -143,8 +145,12 @@ if __name__ == '__main__':
   # from tensorflow.keras import layers
   if tf.test.gpu_device_name():
     print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+    gpus = tf.config.list_physical_devices('GPU')
+    for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
   else:
     print("Please install GPU version of TF")
+
 
 
   sequence_figure_path = 'database\\sequenced_figures_post_mutation\\'
@@ -159,7 +165,6 @@ if __name__ == '__main__':
   
   for i in class_weights:
     class_weights[i] = (1/class_weights[i])*len(labels)
-  class_weights[23.0] = 1.0
   print(class_weights)
 
 
@@ -195,17 +200,18 @@ if __name__ == '__main__':
   training_files=file_names[:int(len(file_array_shuffle)*0.8)]
   validation_files=file_names[int(len(file_array_shuffle)*0.8):]
 
-  training_generator = DataGenerator(path=sequence_figure_path, dimensions=(sequence_len,48,64), labels=labels, batch_size=16, file_names=training_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=True)
-  validation_generator = DataGenerator(path=sequence_figure_path, dimensions=(sequence_len,48,64), labels=labels, batch_size=16, file_names=validation_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=True)
+  training_generator = DataGenerator(path=sequence_figure_path, dimensions=(sequence_len,48,64), labels=labels, batch_size=32, file_names=training_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=True)
+  validation_generator = DataGenerator(path=sequence_figure_path, dimensions=(sequence_len,48,64), labels=labels, batch_size=32, file_names=validation_files, n_channels=1, num_classes=3, shuffle=True, use_file_labels=True)
 
   lstm = LSTM_model(latent_dim)
   optimizer = optimizers.Adam(lr=0.00001)
   lstm.compile(optimizer=optimizer, loss=losses.CategoricalCrossentropy(), metrics=['accuracy'])
 
   lstm.fit(training_generator,
-                  epochs=30,
-                  validation_data=validation_generator,
-                  class_weight=class_weights)
+                  epochs=80,
+                  validation_data=validation_generator)
+
+  lstm.save('database/my_model/dog')
 
   #predictions = lstm.predict(all_images_vali)
   #for i, pred in enumerate(predictions):
@@ -218,6 +224,7 @@ if __name__ == '__main__':
   cam = RSCW.RSC()
   pp = PP.PreProc()
   image_sequence = np.zeros((1, sequence_len, 48, 64, 1))
+  
   while(1):
       # capture the image
       image = cam.capture()
@@ -234,7 +241,8 @@ if __name__ == '__main__':
 
       predictions = lstm.predict(image_sequence)
       #cv2.imshow("Depth Veiw", all_images_vali_view[i+sequence_len])
-      print(str(max( (v, i) for i, v in enumerate(predictions[0]) )[1]) + ' guess ')
+      local_and_percent = max( (v, i) for i, v in enumerate(predictions[0]) )
+      print('Percent max: ' + str(int(local_and_percent[0]*100)).zfill(3) + ' Max Locale: ' + str(chr(local_and_percent[1] + 65)), end='\r')
 
       # if a key is pressed, start the collection, otherwise loop
       k = cv2.waitKey(100)
@@ -243,7 +251,6 @@ if __name__ == '__main__':
       # ESC == 27 in ascii
       if k == 27:
           break
-
 
   """
   decoded_imgs = autoencoder.decoder(all_encoded_iamges).numpy()
